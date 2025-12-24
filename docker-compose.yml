@@ -1,28 +1,54 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=django_db
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend:
+    # Используем готовый образ из GHCR
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-backend
     restart: always
-    ports:
-      - "5000:5000"
-    # Ограничиваем ресурсы, чтобы сервер не завис
+    environment:
+      - DB_HOST=db
+      - DB_NAME=django_db
+      - DB_USER=user
+      - DB_PASS=password
+    depends_on:
+      - db
+    logging: *default-logging
+    # Добавляем лимиты памяти для экономии ресурсов сервера
     deploy:
       resources:
         limits:
-          memory: 256M # Бэкенду обычно нужно больше
+          memory: 256M
 
   frontend:
+    # Используем готовый образ из GHCR
     image: ghcr.io/polkanoval/pizza-shop-frontend:latest
     container_name: pizza-frontend
-    restart: always
     ports:
+      # Nginx внутри образа слушает порт 80
       - "80:80"
-    depends_on:
-      - backend
-    # Лимит памяти
+    restart: always
+    logging: *default-logging
+    # Добавляем лимиты памяти
     deploy:
       resources:
         limits:
-          memory: 128M # Фронтенд на Nginx очень легкий
+          memory: 128M
+
+volumes:
+  postgres_data:
