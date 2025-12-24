@@ -3,14 +3,26 @@ version: '3.8'
 services:
   backend:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
+    container_name: pizza-backend
     restart: always
     ports:
       - "5000:5000"
+    # Ограничиваем ресурсы, чтобы сервер не завис
+    deploy:
+      resources:
+        limits:
+          memory: 256M # Бэкенду обычно нужно больше
 
   frontend:
     image: ghcr.io/polkanoval/pizza-shop-frontend:latest
+    container_name: pizza-frontend
     restart: always
     ports:
       - "80:80"
     depends_on:
       - backend
+    # Лимит памяти
+    deploy:
+      resources:
+        limits:
+          memory: 128M # Фронтенд на Nginx очень легкий
