@@ -1,0 +1,24 @@
+name: Manual Server Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            # Переходим в папку на сервере, где лежит docker-compose.yml
+            cd /var/www/polkanoval-project
+
+            # Скачиваем свежие образы из GHCR
+            docker compose pull
+
+            # Перезапускаем контейнеры с новыми образами
+            docker compose up -d
