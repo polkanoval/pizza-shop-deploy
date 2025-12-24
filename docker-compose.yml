@@ -6,6 +6,8 @@ services:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-backend
     restart: always
+    ports:
+      - "8000:8000"
 
     volumes:
 
@@ -26,7 +28,7 @@ services:
     image: ghcr.io/polkanoval/pizza-shop-frontend:latest
     container_name: pizza-frontend
     ports:
-      - "80:80"
+      - "8080:80"
     restart: always
     logging: *default-logging
     deploy:
