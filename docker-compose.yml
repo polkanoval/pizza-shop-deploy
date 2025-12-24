@@ -1,39 +1,28 @@
 version: '3.8'
 
 services:
-  db:
-    image: postgres:15-alpine
+  backend:
+
+    image: ghcr.io/polkanoval/pizza-shop-backend:latest
+    container_name: pizza-backend
     restart: always
+
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_DB=django_db
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
+
+      - ./db.sqlite3:/app/db.sqlite3
+
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     logging: &default-logging
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-  backend:
-    image: ghcr.io/polkanoval/pizza-shop-backend:latest
-    container_name: pizza-backend
-    restart: always
-    environment:
-      - DB_HOST=db
-      - DB_NAME=django_db
-      - DB_USER=user
-      - DB_PASS=password
-    depends_on:
-      - db
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
   frontend:
+
     image: ghcr.io/polkanoval/pizza-shop-frontend:latest
     container_name: pizza-frontend
     ports:
@@ -44,6 +33,3 @@ services:
       resources:
         limits:
           memory: 128M
-
-volumes:
-  postgres_data:
