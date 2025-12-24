@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=django_db
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    build: ./backend/backend
+    restart: always
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend/backend:/app
+    environment:
+      - DB_HOST=db
+      - DB_NAME=django_db
+      - DB_USER=user
+      - DB_PASS=password
+    depends_on:
+      - db
+    logging: *default-logging
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    restart: always
+    volumes:
+      - ./nginx/conf/docker-nginx.conf:/etc/nginx/conf.d/default.conf
+    logging: *default-logging
+
+volumes:
+  postgres_data:
