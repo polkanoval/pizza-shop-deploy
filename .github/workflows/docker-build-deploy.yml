@@ -17,15 +17,21 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      # ШАГ 3: Копируем файлы по отдельности, без флага -r
+      # ШАГ 3: Копируем все необходимые файлы и папки на сервер, включая медиа и статику
       - name: Copy files via native SCP command
         run: |
           # Копируем docker-compose.yml
           scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/
 
-          # Создаем целевую папку nginx/conf на сервере заранее!
-          ssh -o StrictHostKeyChecking=no ${{ secrets.USER }}@${{ secrets.HOST }} "mkdir -p /var/www/polkanoval-project/nginx/conf/"
+          # Создаем целевые папки на сервере заранее
+          ssh -o StrictHostKeyChecking=no ${{ secrets.USER }}@${{ secrets.HOST }} "mkdir -p /var/www/polkanoval-project/nginx/conf/ /var/www/polkanoval-project/backend/backend/media/ /var/www/polkanoval-project/backend/backend/staticfiles/"
+
+          # Копируем конфиг Nginx
           scp -o StrictHostKeyChecking=no nginx/conf/prod.conf ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/nginx/conf/
+
+          # Копируем содержимое папок media и staticfiles (теперь они в репозитории!)
+          scp -r -o StrictHostKeyChecking=no backend/backend/media/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/media/
+          scp -r -o StrictHostKeyChecking=no backend/backend/staticfiles/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/staticfiles/
 
       # ШАГ 4: Запускаем SSH action ТОЛЬКО для выполнения команд НА СЕРВЕРЕ
       - name: Run deploy scripts on server
@@ -44,16 +50,8 @@ jobs:
 
             # --- АВТОМАТИЧЕСКИЙ СБОР СТАТИЧЕСКИХ ФАЙЛОВ ---
             # Запуск collectstatic внутри контейнера Django
-            # --noinput автоматически отвечает 'yes' на запрос
             docker compose run --rm backend python manage.py collectstatic --noinput
             # --- КОНЕЦ СБОРА СТАТИКИ ---
-
-            # --- АВТОМАТИЧЕСКАЯ МИГРАЦИЯ МЕДИАФАЙЛОВ ---
-            # Эта команда копирует файлы из старой локальной директории на сервере в новый Docker Volume mountpoint
-            # Убедитесь, что /var/www/polkanoval-project/backend/backend/media/ - это правильный старый путь!
-            # Путь к Mountpoint мы узнали из docker volume inspect
-            cp -r /var/www/polkanoval-project/backend/backend/media/* /var/lib/docker/volumes/polkanoval-project_media_volume/_data/ || true
-            # --- КОНЕЦ МИГРАЦИИ МЕДИАФАЙЛОВ ---
 
             # Запускаем все контейнеры (включая Nginx)
             docker compose up -d
