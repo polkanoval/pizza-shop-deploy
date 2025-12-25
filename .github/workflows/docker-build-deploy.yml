@@ -11,7 +11,11 @@ jobs:
       - name: Checkout repository code
         uses: actions/checkout@v4
 
-      # ШАГ 2: Теперь используйте scp-action для копирования файлов (как в предыдущем сообщении)
+      # --- ЭТОТ ШАГ ПОКАЖЕТ, ЧТО ЛЕЖИТ В ПАПКЕ ПЕРЕД КОПИРОВАНИЕМ ---
+      - name: List files in workspace
+        run: ls -la
+
+      # ШАГ 2: Теперь используем scp-action для копирования файлов
       - name: Copy files via SCP
         uses: appleboy/scp-action@v0.1.4 # Используем SCP action
         with:
@@ -22,8 +26,6 @@ jobs:
           source: |
             docker-compose.yml
             nginx/
-          # Дополнительно: можно добавить отладочный вывод, чтобы убедиться, что файлы существуют
-          # run: ls -la # используйте этот шаг после checkout, чтобы увидеть файлы
 
       # ШАГ 3: Запускаем SSH action ТОЛЬКО для выполнения команд НА СЕРВЕРЕ
       - name: Run deploy scripts on server
