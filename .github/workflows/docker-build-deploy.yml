@@ -17,24 +17,25 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      # ШАГ 3: Копируем все необходимые файлы и папки на сервер, включая медиа и статику
+      # ШАГ 3: Копируем все необходимые файлы и папки на сервер
       - name: Copy files via native SCP command
         run: |
           # Копируем docker-compose.yml
           scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/
 
           # Создаем целевые папки на сервере заранее, используя путь из старого конфига Nginx
-          ssh -o StrictHostKeyChecking=no ${{ secrets.USER }}@${{ secrets.HOST }} "mkdir -p /var/www/polkanoval-project/nginx/conf/ /var/www/polkanoval-project/backend/media/ /var/www/polkanoval-project/backend/staticfiles/"
+          ssh -o StrictHostKeyChecking=no ${{ secrets.USER }}@${{ secrets.HOST }} "mkdir -p /var/www/polkanoval-project/nginx/conf/ /var/www/polkanoval-project/backend/backend/media/discount_images/ /var/www/polkanoval-project/backend/backend/media/menu_images/ /var/www/polkanoval-project/backend/backend/staticfiles/"
 
           # Копируем конфиг Nginx
           scp -o StrictHostKeyChecking=no nginx/conf/prod.conf ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/nginx/conf/
 
-          # Копируем содержимое папок media и staticfiles из репозитория на сервер
-          scp -r -o StrictHostKeyChecking=no backend/media/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/media/
-          scp -r -o StrictHostKeyChecking=no backend/staticfiles/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/staticfiles/
+          # Копируем содержимое папок media из репозитория на сервер
+          scp -r -o StrictHostKeyChecking=no backend/media/discount_images/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/media/discount_images/
+          scp -r -o StrictHostKeyChecking=no backend/media/menu_images/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/media/menu_images/
+          scp -r -o StrictHostKeyChecking=no backend/staticfiles/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/staticfiles/
 
       # ШАГ 4: Запускаем SSH action ТОЛЬКО для выполнения команд НА СЕРВЕРЕ
-      - name: Run deploy scripts on server
+      # ... (остальная часть скрипта без изменений)
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST }}
@@ -49,8 +50,6 @@ jobs:
             docker compose pull
 
             # --- АВТОМАТИЧЕСКИЙ СБОР СТАТИЧЕСКИХ ФАЙЛОВ ---
-            # Запуск collectstatic внутри контейнера Django.
-            # Это обновит статику в общем томе (static_volume)
             docker compose run --rm backend python manage.py collectstatic --noinput
             # --- КОНЕЦ СБОРА СТАТИКИ ---
 
