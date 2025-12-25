@@ -7,40 +7,28 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      # ШАГ 1: Загружаем файлы репозитория
+      # ШАГ 1: Загружаем файлы из репозитория деплоя (docker-compose, nginx.conf)
       - name: Checkout repository code
         uses: actions/checkout@v4
 
-      # ШАГ 1.1: ПРОВЕРКА ФАЙЛОВ (вы увидите корень репозитория в логах Actions)
-      - name: Debug - List root files
-        run: |
-          echo "Текущая директория: $(pwd)"
-          ls -R
-
-      # ШАГ 2: Добавляем ваш приватный SSH-ключ в SSH-агент раннера GitHub
+      # ШАГ 2: Настройка SSH-агента
       - name: Add SSH Key to Agent
         uses: webfactory/ssh-agent@v0.8.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      # ШАГ 3: Копируем все необходимые файлы и папки на сервер
-      - name: Copy files via native SCP command
+      # ШАГ 3: Подготовка сервера и копирование конфигов
+      - name: Copy Configs via SCP
         run: |
-          # Копируем docker-compose.yml
+          # 1. Создаем структуру папок.
+          # Важно создать 'media' заранее, чтобы она не создалась от имени root при запуске Docker
+          ssh -o StrictHostKeyChecking=no ${{ secrets.USER }}@${{ secrets.HOST }} "mkdir -p /var/www/polkanoval-project/nginx/conf/ /var/www/polkanoval-project/media/"
+
+          # 2. Копируем файлы управления
           scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/
-
-          # Создаем целевые папки на сервере заранее, используя путь из старого конфига Nginx
-          ssh -o StrictHostKeyChecking=no ${{ secrets.USER }}@${{ secrets.HOST }} "mkdir -p /var/www/polkanoval-project/nginx/conf/ /var/www/polkanoval-project/backend/backend/media/discount_images/ /var/www/polkanoval-project/backend/backend/media/menu_images/ /var/www/polkanoval-project/backend/backend/staticfiles/"
-
-          # Копируем конфиг Nginx
           scp -o StrictHostKeyChecking=no nginx/conf/prod.conf ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/nginx/conf/
 
-          # Копируем содержимое папок media из репозитория на сервер
-          scp -r -o StrictHostKeyChecking=no backend/media/discount_images/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/media/discount_images/
-          scp -r -o StrictHostKeyChecking=no backend/media/menu_images/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/media/menu_images/
-          scp -r -o StrictHostKeyChecking=no backend/staticfiles/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/staticfiles/
-
-      # ШАГ 4: Запускаем SSH action ТОЛЬКО для выполнения команд НА СЕРВЕРЕ
+      # ШАГ 4: Команды на сервере (Автоматизация БД, статики и ПРАВ ДОСТУПА)
       - name: Run deploy scripts on server
         uses: appleboy/ssh-action@master
         with:
@@ -49,20 +37,25 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/polkanoval-project
-            # Авторизуемся в GHCR
+
+            # 1. Авторизация в реестре образов
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Скачиваем свежие образы
+            # 2. Обновление образов и перезапуск
             docker compose pull
+            docker compose up -d --remove-orphans
 
-            # --- АВТОМАТИЧЕСКИЙ СБОР СТАТИЧЕСКИХ ФАЙЛОВ ---
-            # Запуск collectstatic внутри контейнера Django.
-            # Это обновит статику в общем томе (static_volume)
-            docker compose run --rm backend python manage.py collectstatic --noinput
-            # --- КОНЕЦ СБОРА СТАТИКИ ---
+            # 3. НАСТРОЙКА ПРАВ (Критически важно для записи Медиа и БД)
+            # Даем права на запись в папку медиа и файл базы данных внутри контейнера
+            # chmod 666 для sqlite позволяет избежать ошибки 'readonly database'
+            sudo chmod -R 775 media/
+            [ -f db.sqlite3 ] && sudo chmod 666 db.sqlite3 || touch db.sqlite3 && sudo chmod 666 db.sqlite3
 
-            # Запускаем все контейнеры (включая Nginx)
-            docker compose up -d
+            # 4. АВТОМАТИЗАЦИЯ DJANGO
+            # Применяем миграции
+            docker compose exec -T backend python manage.py migrate --noinput
+            # Собираем статику в static_volume
+            docker compose exec -T backend python manage.py collectstatic --noinput
 
-            # Очистка: удаляем старые, неиспользуемые образы и кэш
-            docker system prune -a -f
+            # 5. ОЧИСТКА
+            docker image prune -f
