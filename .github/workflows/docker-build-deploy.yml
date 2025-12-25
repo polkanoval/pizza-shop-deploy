@@ -17,7 +17,7 @@ jobs:
 
       # ШАГ 2: Теперь используем scp-action для копирования файлов
       - name: Copy files via SCP
-        uses: appleboy/scp-action@v0.1.4 # Используем SCP action
+        uses: appleboy/scp-action@v0.1.5 # Используем SCP action
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
