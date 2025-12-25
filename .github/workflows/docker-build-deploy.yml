@@ -35,7 +35,7 @@ jobs:
           scp -r -o StrictHostKeyChecking=no backend/staticfiles/* ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/backend/backend/staticfiles/
 
       # ШАГ 4: Запускаем SSH action ТОЛЬКО для выполнения команд НА СЕРВЕРЕ
-      # ... (остальная часть скрипта без изменений)
+      - name: Run deploy scripts on server
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST }}
@@ -50,6 +50,8 @@ jobs:
             docker compose pull
 
             # --- АВТОМАТИЧЕСКИЙ СБОР СТАТИЧЕСКИХ ФАЙЛОВ ---
+            # Запуск collectstatic внутри контейнера Django.
+            # Это обновит статику в общем томе (static_volume)
             docker compose run --rm backend python manage.py collectstatic --noinput
             # --- КОНЕЦ СБОРА СТАТИКИ ---
 
