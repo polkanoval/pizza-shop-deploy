@@ -48,6 +48,13 @@ jobs:
             docker compose run --rm backend python manage.py collectstatic --noinput
             # --- КОНЕЦ СБОРА СТАТИКИ ---
 
+            # --- АВТОМАТИЧЕСКАЯ МИГРАЦИЯ МЕДИАФАЙЛОВ ---
+            # Эта команда копирует файлы из старой локальной директории на сервере в новый Docker Volume mountpoint
+            # Убедитесь, что /var/www/polkanoval-project/backend/backend/media/ - это правильный старый путь!
+            # Путь к Mountpoint мы узнали из docker volume inspect
+            cp -r /var/www/polkanoval-project/backend/backend/media/* /var/lib/docker/volumes/polkanoval-project_media_volume/_data/ || true
+            # --- КОНЕЦ МИГРАЦИИ МЕДИАФАЙЛОВ ---
+
             # Запускаем все контейнеры (включая Nginx)
             docker compose up -d
 
