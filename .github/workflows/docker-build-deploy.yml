@@ -7,25 +7,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      # ШАГ 1: Загружаем файлы репозитория
       - name: Checkout repository code
         uses: actions/checkout@v4
 
-      # ШАГ 2: Добавляем ваш приватный SSH-ключ в SSH-агент раннера GitHub
       - name: Add SSH Key to Agent
         uses: webfactory/ssh-agent@v0.8.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      # ШАГ 3: Копируем файлы напрямую с помощью стандартной команды SCP
       - name: Copy files via native SCP command
         run: |
-          # --- ДОБАВЬТЕ ЭТУ СТРОКУ ДЛЯ ОТЛАДКИ ПЕРЕД SCP ---
-          file docker-compose.yml nginx/prod.conf
+          # Проверяем наличие файлов с правильным путем
+          file docker-compose.yml nginx/conf/prod.conf # <-- ПУТЬ ИСПРАВЛЕН ЗДЕСЬ
 
-          scp -o StrictHostKeyChecking=no -r docker-compose.yml nginx/prod.conf ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/
+          # Копируем файлы с правильным путем
+          scp -o StrictHostKeyChecking=no -r docker-compose.yml nginx/conf/prod.conf ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/ # <-- ПУТЬ ИСПРАВЛЕН ЗДЕСЬ
 
-      # ШАГ 4: Запускаем SSH action ТОЛЬКО для выполнения команд НА СЕРВЕРЕ
       - name: Run deploy scripts on server
         uses: appleboy/ssh-action@master
         with:
@@ -33,10 +30,7 @@ jobs:
           username: ${{ secrets.USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Переходим в папку на сервере
             cd /var/www/polkanoval-project
-
-            # Авторизуемся и запускаем контейнеры
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
             docker compose up -d
