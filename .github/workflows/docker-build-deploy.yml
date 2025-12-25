@@ -23,7 +23,7 @@ jobs:
           # Копируем docker-compose.yml
           scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/
 
-          # Копируем prod.conf. Нам нужно создать целевую папку nginx/conf на сервере заранее!
+          # Создаем целевую папку nginx/conf на сервере заранее!
           ssh -o StrictHostKeyChecking=no ${{ secrets.USER }}@${{ secrets.HOST }} "mkdir -p /var/www/polkanoval-project/nginx/conf/"
           scp -o StrictHostKeyChecking=no nginx/conf/prod.conf ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/nginx/conf/
 
@@ -36,7 +36,20 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/polkanoval-project
+            # Авторизуемся в GHCR
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Скачиваем свежие образы
             docker compose pull
+
+            # --- АВТОМАТИЧЕСКИЙ СБОР СТАТИЧЕСКИХ ФАЙЛОВ ---
+            # Запуск collectstatic внутри контейнера Django
+            # --noinput автоматически отвечает 'yes' на запрос
+            docker compose run --rm backend python manage.py collectstatic --noinput
+            # --- КОНЕЦ СБОРА СТАТИКИ ---
+
+            # Запускаем все контейнеры (включая Nginx)
             docker compose up -d
+
+            # Очистка: удаляем старые, неиспользуемые образы и кэш
             docker system prune -a -f
