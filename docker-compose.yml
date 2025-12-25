@@ -42,7 +42,7 @@ services:
       - "443:443"
     volumes:
       # Наш единственный конфиг из папки deploy
-      - ./nginx/conf/prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/conf/prod.conf:/etc/nginx/conf.d/default.conf
       # Проброс сертификатов Certbot с вашего сервера
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
