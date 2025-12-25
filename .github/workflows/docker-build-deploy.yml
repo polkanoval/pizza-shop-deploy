@@ -45,6 +45,8 @@ jobs:
             docker compose pull
             docker compose up -d --remove-orphans
 
+            docker compose restart nginx
+
             # 3. НАСТРОЙКА ПРАВ (Критически важно для записи Медиа и БД)
             # Даем права на запись в папку медиа и файл базы данных внутри контейнера
             # chmod 666 для sqlite позволяет избежать ошибки 'readonly database'

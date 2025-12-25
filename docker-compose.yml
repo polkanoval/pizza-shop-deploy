@@ -11,7 +11,7 @@ services:
       # Файл базы данных в корне проекта
       - ./db.sqlite3:/app/db.sqlite3
       # Совмещаем с STATIC_ROOT = BASE_DIR / 'static'
-      - static_volume:/app/static
+      - static_volume:/app/staticfiles
       # Совмещаем с MEDIA_ROOT = BASE_DIR / 'media'
       - ./media:/app/media
     deploy:
