@@ -20,11 +20,12 @@ jobs:
       # ШАГ 3: Копируем файлы напрямую с помощью стандартной команды SCP
       - name: Copy files via native SCP command
         run: |
-          # Используем команду scp. SSH-agent обрабатывает ключ.
-          # StrictHostKeyChecking=no нужен для автоматического подключения без подтверждения отпечатка.
-          scp -o StrictHostKeyChecking=no -r docker-compose.yml nginx/ ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/
+          # --- ДОБАВЬТЕ ЭТУ СТРОКУ ДЛЯ ОТЛАДКИ ПЕРЕД SCP ---
+          file docker-compose.yml nginx/prod.conf
 
-      # ШАГ 4: Запускаем SSH action ТОЛЬКО для выполнения команд НА СЕРВЕРЕ (без копирования)
+          scp -o StrictHostKeyChecking=no -r docker-compose.yml nginx/prod.conf ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/
+
+      # ШАГ 4: Запускаем SSH action ТОЛЬКО для выполнения команд НА СЕРВЕРЕ
       - name: Run deploy scripts on server
         uses: appleboy/ssh-action@master
         with:
