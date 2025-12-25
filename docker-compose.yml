@@ -2,17 +2,14 @@ version: '3.8'
 
 services:
   backend:
-
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-backend
     restart: always
-    ports:
-      - "8000:8000"
-
+    # Убираем ports 8000:8000, чтобы никто не зашел в обход Nginx
+    expose:
+      - "8000"
     volumes:
-
       - ./db.sqlite3:/app/db.sqlite3
-
     deploy:
       resources:
         limits:
@@ -24,14 +21,35 @@ services:
         max-file: "3"
 
   frontend:
-
     image: ghcr.io/polkanoval/pizza-shop-frontend:latest
     container_name: pizza-frontend
-    ports:
-      - "8080:80"
     restart: always
-    logging: *default-logging
+    # Убираем 8080:80, фронтенд будет доступен только через Nginx на 80/443
+    expose:
+      - "80"
     deploy:
       resources:
         limits:
           memory: 128M
+    logging: *default-logging
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: pizza-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Наш единственный конфиг из папки deploy
+      - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
+      # Проброс сертификатов Certbot с вашего сервера
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - backend
+      - frontend
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    logging: *default-logging

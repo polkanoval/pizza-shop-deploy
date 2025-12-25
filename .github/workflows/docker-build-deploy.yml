@@ -1,7 +1,7 @@
 name: Manual Server Deploy
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Это позволяет запускать деплой вручную через UI GitHub
 
 jobs:
   deploy:
@@ -16,6 +16,9 @@ jobs:
           script: |
             # Переходим в папку на сервере, где лежит docker-compose.yml
             cd /var/www/polkanoval-project
+
+            # Используем ваш Personal Access Token (GHCR_TOKEN), добавленный в секреты репозитория
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # Скачиваем свежие образы из GHCR
             docker compose pull
