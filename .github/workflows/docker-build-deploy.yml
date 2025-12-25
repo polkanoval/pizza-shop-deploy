@@ -11,6 +11,12 @@ jobs:
       - name: Checkout repository code
         uses: actions/checkout@v4
 
+      # ШАГ 1.1: ПРОВЕРКА ФАЙЛОВ (вы увидите корень репозитория в логах Actions)
+      - name: Debug - List root files
+        run: |
+          echo "Текущая директория: $(pwd)"
+          ls -R
+
       # ШАГ 2: Добавляем ваш приватный SSH-ключ в SSH-агент раннера GitHub
       - name: Add SSH Key to Agent
         uses: webfactory/ssh-agent@v0.8.0
