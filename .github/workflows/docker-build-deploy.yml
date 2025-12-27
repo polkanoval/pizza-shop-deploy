@@ -60,4 +60,4 @@ jobs:
             docker compose exec -T backend python manage.py collectstatic --noinput
 
             # 5. ОЧИСТКА
-            docker image prune -f
+             docker system prune -af --volumes
