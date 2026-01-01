@@ -1,6 +1,17 @@
 version: '3.8'
 
 services:
+  # Брокер сообщений для Celery
+  redis:
+    image: redis:7-alpine
+    container_name: pizza-redis
+    restart: always
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-backend
@@ -8,21 +19,51 @@ services:
     expose:
       - "8000"
     volumes:
-      # Файл базы данных в корне проекта
       - ./db.sqlite3:/app/db.sqlite3
-      # Совмещаем с STATIC_ROOT = BASE_DIR / 'static'
       - static_volume:/app/staticfiles
-      # Совмещаем с MEDIA_ROOT = BASE_DIR / 'media'
       - ./media:/app/media
+    depends_on:
+      - redis
     deploy:
       resources:
         limits:
           memory: 256M
-    logging: &default-logging
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
+
+  # Воркер — меняет статусы заказов
+  celery-worker:
+    image: ghcr.io/polkanoval/pizza-shop-backend:latest
+    container_name: pizza-celery-worker
+
+    command: celery -A backend worker --loglevel=info
+    restart: always
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./media:/app/media
+    depends_on:
+      - redis
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging: *default-logging
+
+  # Бит — создает 10 заказов в день по расписанию
+  celery-beat:
+    image: ghcr.io/polkanoval/pizza-shop-backend:latest
+    container_name: pizza-celery-beat
+    command: celery -A backend beat --loglevel=info
+    restart: always
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+    depends_on:
+      - redis
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging: *default-logging
 
   frontend:
     image: ghcr.io/polkanoval/pizza-shop-frontend:latest
@@ -44,11 +85,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      # Конфиг Nginx
       - ./nginx/conf/prod.conf:/etc/nginx/conf.d/default.conf
-      # SSL сертификаты
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      # Пути для Nginx (должны быть прописаны как alias в prod.conf)
       - static_volume:/var/www/staticfiles:ro
       - ./media:/var/www/media:ro
     depends_on:

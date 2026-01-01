@@ -44,6 +44,8 @@ jobs:
             # 2. Обновление образов и перезапуск
             docker compose pull
             docker compose up -d --remove-orphans
+            # Перезапускаем Celery-сервисы, чтобы они подгрузили новый код задач
+            docker compose restart celery-worker celery-beat
 
             docker compose restart nginx
 
@@ -51,7 +53,12 @@ jobs:
             # Даем права на запись в папку медиа и файл базы данных внутри контейнера
             # chmod 666 для sqlite позволяет избежать ошибки 'readonly database'
             sudo chmod -R 775 media/
-            [ -f db.sqlite3 ] && sudo chmod 666 db.sqlite3 || touch db.sqlite3 && sudo chmod 666 db.sqlite3
+            [ -f db.sqlite3 ] || touch db.sqlite3
+            sudo chmod 666 db.sqlite3
+            # Применяем права к файлу БД внутри всех контейнеров, где он смонтирован
+            docker compose exec -T backend sh -c 'chmod 666 /app/db.sqlite3 || true'
+            docker compose exec -T celery-worker sh -c 'chmod 666 /app/db.sqlite3 || true'
+            docker compose exec -T celery-beat sh -c 'chmod 666 /app/db.sqlite3 || true'
 
             # 4. АВТОМАТИЗАЦИЯ DJANGO
             # Применяем миграции
@@ -60,4 +67,7 @@ jobs:
             docker compose exec -T backend python manage.py collectstatic --noinput
 
             # 5. ОЧИСТКА
-             docker system prune -af --volumes
+            docker system prune -af --volumes
+
+            # Как смотреть логи симуляции заказов (Celery worker):
+            # docker compose logs -f celery-worker
