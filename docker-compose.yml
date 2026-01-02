@@ -28,12 +28,10 @@ services:
           memory: 256M
     logging: *default-logging
 
-  # Воркер — меняет статусы заказов
   celery-worker:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-celery-worker
-    # Добавлена параллельность 4 потока и мониторинг событий -E
-    command: celery -A backend worker --loglevel=info --concurrency=4 -E
+    command: celery -A backend worker --loglevel=info --concurrency=4 -Ofair --prefetch-multiplier=1 -E
     restart: always
     volumes:
       - ./db.sqlite3:/app/db.sqlite3
@@ -47,7 +45,6 @@ services:
           memory: 256M
     logging: *default-logging
 
-  # Бит — создает заказы по расписанию
   celery-beat:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-celery-beat
