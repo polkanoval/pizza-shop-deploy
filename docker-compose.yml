@@ -20,6 +20,9 @@ services:
       - ./db.sqlite3:/app/db.sqlite3
       - static_volume:/app/staticfiles
       - ./media:/app/media
+      # Синхронизация времени
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - redis
     deploy:
@@ -28,14 +31,19 @@ services:
           memory: 256M
     logging: *default-logging
 
+  # Воркер — меняет статусы заказов
   celery-worker:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-celery-worker
+    # Фикс заторов: concurrency, честное распределение и мониторинг событий
     command: celery -A backend worker --loglevel=info --concurrency=4 -Ofair --prefetch-multiplier=1 -E
     restart: always
     volumes:
       - ./db.sqlite3:/app/db.sqlite3
       - ./media:/app/media
+      # Синхронизация времени (Критично для выполнения countdown)
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - redis
       - backend
@@ -45,6 +53,7 @@ services:
           memory: 256M
     logging: *default-logging
 
+  # Бит — создает заказы по расписанию
   celery-beat:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-celery-beat
@@ -52,6 +61,8 @@ services:
     restart: always
     volumes:
       - ./db.sqlite3:/app/db.sqlite3
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - redis
     deploy:
@@ -84,6 +95,8 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - static_volume:/var/www/staticfiles:ro
       - ./media:/var/www/media:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - backend
       - frontend
