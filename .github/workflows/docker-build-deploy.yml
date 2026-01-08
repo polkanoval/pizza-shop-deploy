@@ -36,6 +36,7 @@ jobs:
           username: ${{ secrets.USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            alias docker-compose='docker compose'
             cd /var/www/polkanoval-project
 
             # 1. Авторизация в реестре образов
