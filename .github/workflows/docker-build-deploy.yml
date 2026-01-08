@@ -36,7 +36,6 @@ jobs:
           username: ${{ secrets.USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            alias docker-compose='docker compose'
             cd /var/www/polkanoval-project
 
             # 1. Авторизация в реестре образов
@@ -45,32 +44,29 @@ jobs:
             # 2. Обновление образов и перезапуск
             docker compose pull
             docker compose up -d --remove-orphans
-
-            # Эта команда ждет состояния 'healthy'. Если не дождется, скрипт упадет с ошибкой.
-            timeout 120s docker compose wait backend frontend
-
-            echo "--- Статус Healthcheck ---"
-            docker compose ps --filter "health=healthy" # Показать здоровые
-            docker compose ps --filter "health=unhealthy" # Показать нездоровые
-            echo "--------------------------"
-
-            # 3. Перезапускаем Celery-сервисы и Nginx после того, как основные сервисы здоровы
+            # Перезапускаем Celery-сервисы, чтобы они подгрузили новый код задач
             docker compose restart celery-worker celery-beat
+
             docker compose restart nginx
 
-            # 4. НАСТРОЙКА ПРАВ (Критически важно для записи Медиа и БД)
+            # 3. НАСТРОЙКА ПРАВ (Критически важно для записи Медиа и БД)
+            # Даем права на запись в папку медиа и файл базы данных внутри контейнера
+            # chmod 666 для sqlite позволяет избежать ошибки 'readonly database'
             sudo chmod -R 775 media/
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
+            # Применяем права к файлу БД внутри всех контейнеров, где он смонтирован
             docker compose exec -T backend sh -c 'chmod 666 /app/db.sqlite3 || true'
             docker compose exec -T celery-worker sh -c 'chmod 666 /app/db.sqlite3 || true'
             docker compose exec -T celery-beat sh -c 'chmod 666 /app/db.sqlite3 || true'
 
-            # 5. АВТОМАТИЗАЦИЯ DJANGO
+            # 4. АВТОМАТИЗАЦИЯ DJANGO
+            # Применяем миграции
             docker compose exec -T backend python manage.py migrate --noinput
+            # Собираем статику в static_volume
             docker compose exec -T backend python manage.py collectstatic --noinput
 
-            # 6. ОЧИСТКА
+            # 5. ОЧИСТКА
             docker system prune -af --volumes
 
             # Как смотреть логи симуляции заказов (Celery worker):
