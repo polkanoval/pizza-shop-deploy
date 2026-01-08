@@ -47,7 +47,7 @@ jobs:
             docker compose up -d --remove-orphans
 
             # Эта команда ждет состояния 'healthy'. Если не дождется, скрипт упадет с ошибкой.
-            docker compose wait backend frontend --timeout 120
+            timeout 120s docker compose wait backend frontend
 
             echo "--- Статус Healthcheck ---"
             docker compose ps --filter "health=healthy" # Показать здоровые
