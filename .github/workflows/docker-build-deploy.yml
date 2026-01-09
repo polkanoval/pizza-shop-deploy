@@ -33,28 +33,28 @@ jobs:
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
 
-            # 1. ПРАВА (Решаем проблему SSL, SQLite и Media сразу)
-            # Даем права на сертификаты, иначе Nginx упадет с CONNECTION_REFUSED
-            sudo chmod -R 755 /etc/letsencrypt/archive/ || true
-            sudo chmod -R 755 /etc/letsencrypt/live/ || true
+            # 1. ЖЕСТКИЙ FIX ПРАВ (SSL + SQLite)
+            # Открываем доступ к сертификатам для Nginx (симлинки Certbot)
+            sudo chmod -R 755 /etc/letsencrypt/
+            sudo find /etc/letsencrypt/archive/ -type f -exec chmod 644 {} +
 
-            # Права на базу и папку проекта
+            # Права на базу (SQLite)
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
             sudo chmod 777 .
             mkdir -p media && sudo chmod -R 777 media
 
-            # 2. ЗАПУСК
-            # Принудительно пересоздаем контейнеры, чтобы подхватить новые конфиги и права
-            docker compose up -d --remove-orphans --force-recreate
+            # 2. ПОЛНЫЙ ПЕРЕЗАПУСК (Сброс зависших состояний)
+            docker compose down
+            docker compose up -d --remove-orphans
 
-            # 3. МИГРАЦИИ (Включая создание пропущенных полей в 'order')
+            # 3. МИГРАЦИИ
             docker compose exec -T backend python manage.py makemigrations order --noinput
             docker compose exec -T backend python manage.py migrate --noinput
             docker compose exec -T backend python manage.py collectstatic --noinput
 
-            # 4. ФИНАЛЬНЫЙ ПЕРЕЗАПУСК БЭКЕНДА
-            docker compose restart backend
+            # 4. СИНХРОНИЗАЦИЯ СЕРВИСОВ
+            docker compose restart backend nginx
             docker system prune -f
 
       - name: Verify Deployment Health
@@ -65,22 +65,31 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/polkanoval-project
-            echo "⏳ Ожидание готовности API (Database/Redis)..."
+            echo "⏳ Ожидание запуска Nginx и API..."
+            sleep 15
 
-            for i in {1..12}; do
-              echo "📊 Проверка #$i..."
+            # Проверка, что Nginx вообще поднял порты 80/443
+            if [ "$(docker inspect -f '{{.State.Running}}' pizza-nginx)" != "true" ]; then
+              echo "❌ NGINX УПАЛ: Ошибка SSL или конфига!"
+              docker compose logs nginx | tail -n 20
+              exit 1
+            fi
+
+            # Проверка API (Database/Redis)
+            for i in {1..10}; do
+              echo "📊 Проверка API #$i..."
               RESPONSE=$(docker compose exec -T backend python -c "
             import urllib.request, json
             req = urllib.request.Request('http://localhost:8000/api/health/')
             req.add_header('Host', 'localhost')
             try:
-                with urllib.request.urlopen(req) as r:
+                with urllib.request.urlopen(req, timeout=5) as r:
                     print(r.read().decode())
             except Exception as e:
                 print('waiting')
             " || echo "error")
 
-              echo "Response: $RESPONSE"
+              echo "Backend: $RESPONSE"
 
               if [[ "$RESPONSE" == *"database\": \"ok\""* ]] && [[ "$RESPONSE" == *"redis\": \"ok\""* ]]; then
                 echo "✅ ДЕПЛОЙ УСПЕШЕН: Все системы онлайн."
@@ -89,7 +98,6 @@ jobs:
               sleep 5
             done
 
-            echo "❌ ОШИБКА: Тайм-аут готовности системы."
-            docker compose logs --tail 20 nginx
-            docker compose logs --tail 20 backend
+            echo "❌ ТАЙМАУТ: Бэкенд не ответил за 60 сек."
+            docker compose logs backend | tail -n 20
             exit 1
