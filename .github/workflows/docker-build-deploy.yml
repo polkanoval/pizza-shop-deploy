@@ -30,41 +30,32 @@ jobs:
           script: |
             cd /var/www/polkanoval-project
 
-            # 1. Авторизация в GHCR
+            # 1. Авторизация
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # 2. Обновление образов
             docker compose pull
 
-            # 3. ПОДГОТОВКА ПРАВ И ФАЙЛОВ БД (ДО запуска)
-            # Создаем БД, если её нет, и даем права. Также создаем папку media.
+            # 3. ПОДГОТОВКА ПРАВ (Решает 500 ошибку записи SQLite)
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
-            mkdir -p media
-            sudo chmod -R 777 media
+            sudo chmod 777 .
+            mkdir -p media && sudo chmod -R 777 media
 
-            # 4. ЗАПУСК ЯДРА
-            # --no-deps позволяет запустить только эти два контейнера
-            docker compose up -d redis backend --no-deps
+            # 4. ЗАПУСК БЕЗ БЛОКИРОВКИ ЗАВИСИМОСТЕЙ
+            # Сначала принудительно поднимаем базу и бэкенд
+            docker compose up -d redis backend
 
-            # Даем Django время на запуск внутреннего процесса
-            sleep 10
-
-            # 5. АВТОМАТИЗАЦИЯ DJANGO (Решаем проблему Deadlock и отсутствующих миграций)
-            # Создаем миграции, если вы забыли сделать это локально
-            docker compose exec -T backend python manage.py makemigrations --noinput
-            # Применяем миграции
+            # 5. МИГРАЦИИ (Выполняем немедленно, чтобы оживить эндпоинт /health/)
             docker compose exec -T backend python manage.py migrate --noinput
-            # Собираем статику
             docker compose exec -T backend python manage.py collectstatic --noinput
 
             # 6. ЗАПУСК ОСТАЛЬНЫХ СЕРВИСОВ
-            # Теперь, когда база готова и миграции прошли, backend станет Healthy.
-            # Эта команда дозапустит celery-worker, celery-beat, frontend и nginx.
+            # Теперь, когда миграции прошли, бэкенд станет healthy и пустит Nginx/Celery
             docker compose up -d --remove-orphans
 
-            # 7. ОЧИСТКА СТАРЫХ ДАННЫХ
-            docker system prune -af --volumes
+            # 7. ОЧИСТКА
+            docker system prune -f
 
       - name: Verify Deployment Health
         uses: appleboy/ssh-action@master
@@ -78,22 +69,27 @@ jobs:
             sleep 40
 
             echo "📊 ПРОВЕРКА API:"
-            # Используем python для проверки бэкенда
-            HEALTH_JSON=$(docker compose exec -T backend python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/api/health/').read().decode())" || echo "error")
-            echo "Response: $HEALTH_JSON"
+            # Используем curl с правильным заголовком Host, чтобы избежать DisallowedHost
+            # Вставляем localhost, так как он точно есть в вашем ALLOWED_HOSTS
+            HEALTH_RESPONSE=$(docker compose exec -T backend curl -s -H "Host: localhost" http://localhost:8000/api/health/ || echo "error")
+            echo "Response: $HEALTH_RESPONSE"
 
             echo "📊 ПРОВЕРКА ФРОНТЕНДА:"
-            # Используем wget для фронтенда (в nginx:alpine нет python)
             if docker compose exec -T frontend wget --spider -q http://localhost; then
               echo "{\"frontend\": \"ok\"}"
+              FRONTEND_OK=true
             else
               echo "{\"frontend\": \"error\"}"
+              FRONTEND_OK=false
             fi
 
-            if [[ "$HEALTH_JSON" == *"ok"* ]]; then
+            # Проверяем наличие "ok" в ответе бэкенда
+            if [[ "$HEALTH_RESPONSE" == *"ok"* ]] && [ "$FRONTEND_OK" = true ]; then
               echo "✅ ДЕПЛОЙ УСПЕШЕН: Все системы работают исправно."
             else
-              echo "❌ ВНИМАНИЕ: Обнаружены проблемы в работе API!"
+              echo "❌ ВНИМАНИЕ: Обнаружены проблемы!"
+              echo "СТАТУС КОНТЕЙНЕРОВ:"
+              docker compose ps
               echo "ПОСЛЕДНИЕ ЛОГИ БЭКЕНДА:"
               docker compose logs backend --tail 50
               exit 1
