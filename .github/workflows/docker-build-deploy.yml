@@ -33,20 +33,24 @@ jobs:
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
 
-            # Подготовка прав для SQLite
+            # 1. Подготовка прав для SQLite (обязательно 777 на папку для lock-файлов)
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
             sudo chmod 777 .
             mkdir -p media && sudo chmod -R 777 media
 
-            # Запускаем всё. Nginx и Celery теперь не упадут, так как стоят в 'service_started'
+            # 2. Запуск контейнеров
+            # (Работает только если в docker-compose.yml заменено service_healthy на service_started)
             docker compose up -d --remove-orphans
 
-            # Проталкиваем миграции в запущенный контейнер
+            # 3. ГЕНЕРАЦИЯ МИГРАЦИЙ (Решает проблему с моделью order)
+            docker compose exec -T backend python manage.py makemigrations --noinput
+
+            # 4. ПРИМЕНЕНИЕ МИГРАЦИЙ
             docker compose exec -T backend python manage.py migrate --noinput
             docker compose exec -T backend python manage.py collectstatic --noinput
 
-            # Перезапуск бэкенда, чтобы Django увидел обновленную базу
+            # 5. ПЕРЕЗАПУСК (чтобы Django применил изменения структуры БД)
             docker compose restart backend
             docker system prune -f
 
@@ -62,11 +66,11 @@ jobs:
             sleep 20
 
             echo "📊 ПРОВЕРКА API:"
-            # Обходим ALLOWED_HOSTS через Host: localhost
+            # Передаем Host: localhost для обхода жесткого ALLOWED_HOSTS в твоем settings.py
             if docker compose exec -T backend curl -f -H "Host: localhost" http://localhost:8000/api/health/; then
               echo "✅ СИСТЕМА ЖИВА"
             else
-              echo "❌ ОШИБКА API"
-              docker compose logs backend --tail 20
+              echo "❌ ОШИБКА API (Смотри логи ниже)"
+              docker compose logs backend --tail 30
               exit 1
             fi
