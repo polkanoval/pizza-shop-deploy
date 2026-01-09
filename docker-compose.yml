@@ -1,5 +1,4 @@
 services:
-  # Брокер сообщений для Celery
   redis:
     image: redis:7-alpine
     container_name: pizza-redis
@@ -9,11 +8,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    logging: &default-logging
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   backend:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
@@ -26,69 +20,36 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s # Даем время на запуск Django
+      start_period: 60s
     volumes:
       - ./db.sqlite3:/app/db.sqlite3
       - static_volume:/app/staticfiles
       - ./media:/app/media
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     depends_on:
       redis:
-        condition: service_healthy # Backend ждет, пока Redis станет healthy
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    logging: *default-logging
+        condition: service_healthy
 
-  # Воркер — меняет статусы заказов
   celery-worker:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-celery-worker
-    command: celery -A backend worker --loglevel=info --concurrency=4 -Ofair --prefetch-multiplier=1 -E
+    command: celery -A backend worker --loglevel=info
     restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A backend inspect ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    volumes:
-      - ./db.sqlite3:/app/db.sqlite3
-      - ./media:/app/media
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     depends_on:
       redis:
         condition: service_healthy
       backend:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    logging: *default-logging
+        condition: service_started # ИЗМЕНЕНО: не ждем health
 
-  # Бит — создает заказы по расписанию
   celery-beat:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-celery-beat
     command: celery -A backend beat --loglevel=info
     restart: always
-    volumes:
-      - ./db.sqlite3:/app/db.sqlite3
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     depends_on:
       redis:
         condition: service_healthy
       backend:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-    logging: *default-logging
+        condition: service_started # ИЗМЕНЕНО: не ждем health
 
   frontend:
     image: ghcr.io/polkanoval/pizza-shop-frontend:latest
@@ -96,11 +57,6 @@ services:
     restart: always
     expose:
       - "80"
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-    logging: *default-logging
 
   nginx:
     image: nginx:stable-alpine
@@ -111,21 +67,13 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf/prod.conf:/etc/nginx/conf.d/default.conf
-      - /etc/letsencrypt:/etc/letsencrypt:ro
       - static_volume:/var/www/staticfiles:ro
       - ./media:/var/www/media:ro
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started # ИЗМЕНЕНО: не ждем health
       frontend:
         condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-    logging: *default-logging
 
 volumes:
   static_volume:

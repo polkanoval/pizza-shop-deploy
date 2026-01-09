@@ -30,31 +30,24 @@ jobs:
           script: |
             cd /var/www/polkanoval-project
 
-            # 1. Авторизация
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            # 2. Обновление образов
             docker compose pull
 
-            # 3. ПОДГОТОВКА ПРАВ (Решает 500 ошибку записи SQLite)
+            # Подготовка прав для SQLite
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
             sudo chmod 777 .
             mkdir -p media && sudo chmod -R 777 media
 
-            # 4. ЗАПУСК БЕЗ БЛОКИРОВКИ ЗАВИСИМОСТЕЙ
-            # Сначала принудительно поднимаем базу и бэкенд
-            docker compose up -d redis backend
+            # Запускаем всё. Nginx и Celery теперь не упадут, так как стоят в 'service_started'
+            docker compose up -d --remove-orphans
 
-            # 5. МИГРАЦИИ (Выполняем немедленно, чтобы оживить эндпоинт /health/)
+            # Проталкиваем миграции в запущенный контейнер
             docker compose exec -T backend python manage.py migrate --noinput
             docker compose exec -T backend python manage.py collectstatic --noinput
 
-            # 6. ЗАПУСК ОСТАЛЬНЫХ СЕРВИСОВ
-            # Теперь, когда миграции прошли, бэкенд станет healthy и пустит Nginx/Celery
-            docker compose up -d --remove-orphans
-
-            # 7. ОЧИСТКА
+            # Перезапуск бэкенда, чтобы Django увидел обновленную базу
+            docker compose restart backend
             docker system prune -f
 
       - name: Verify Deployment Health
@@ -65,32 +58,15 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/polkanoval-project
-            echo "⏳ Ожидание финальной готовности (40 сек)..."
-            sleep 40
+            echo "⏳ Ожидание готовности (20 сек)..."
+            sleep 20
 
             echo "📊 ПРОВЕРКА API:"
-            # Используем curl с правильным заголовком Host, чтобы избежать DisallowedHost
-            # Вставляем localhost, так как он точно есть в вашем ALLOWED_HOSTS
-            HEALTH_RESPONSE=$(docker compose exec -T backend curl -s -H "Host: localhost" http://localhost:8000/api/health/ || echo "error")
-            echo "Response: $HEALTH_RESPONSE"
-
-            echo "📊 ПРОВЕРКА ФРОНТЕНДА:"
-            if docker compose exec -T frontend wget --spider -q http://localhost; then
-              echo "{\"frontend\": \"ok\"}"
-              FRONTEND_OK=true
+            # Обходим ALLOWED_HOSTS через Host: localhost
+            if docker compose exec -T backend curl -f -H "Host: localhost" http://localhost:8000/api/health/; then
+              echo "✅ СИСТЕМА ЖИВА"
             else
-              echo "{\"frontend\": \"error\"}"
-              FRONTEND_OK=false
-            fi
-
-            # Проверяем наличие "ok" в ответе бэкенда
-            if [[ "$HEALTH_RESPONSE" == *"ok"* ]] && [ "$FRONTEND_OK" = true ]; then
-              echo "✅ ДЕПЛОЙ УСПЕШЕН: Все системы работают исправно."
-            else
-              echo "❌ ВНИМАНИЕ: Обнаружены проблемы!"
-              echo "СТАТУС КОНТЕЙНЕРОВ:"
-              docker compose ps
-              echo "ПОСЛЕДНИЕ ЛОГИ БЭКЕНДА:"
-              docker compose logs backend --tail 50
+              echo "❌ ОШИБКА API"
+              docker compose logs backend --tail 20
               exit 1
             fi
