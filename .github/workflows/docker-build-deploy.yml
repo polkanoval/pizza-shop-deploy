@@ -44,11 +44,11 @@ jobs:
             sudo chmod 777 .
             mkdir -p media && sudo chmod -R 777 media
 
-            # 2. ПОЛНЫЙ ПЕРЕЗАПУСК (Сброс зависших состояний)
+            # 2. ПОЛНЫЙ ПЕРЕЗАПУСК
             docker compose down
             docker compose up -d --remove-orphans
 
-            # 3. МИГРАЦИИ
+            # 3. МИГРАЦИИ (Включая создание пропущенных полей в 'order')
             docker compose exec -T backend python manage.py makemigrations order --noinput
             docker compose exec -T backend python manage.py migrate --noinput
             docker compose exec -T backend python manage.py collectstatic --noinput
