@@ -33,24 +33,27 @@ jobs:
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
 
-            # 1. ПРАВА (Решаем 500 ошибку SQLite и Media)
+            # 1. ПРАВА (Решаем проблему SSL, SQLite и Media сразу)
+            # Даем права на сертификаты, иначе Nginx упадет с CONNECTION_REFUSED
+            sudo chmod -R 755 /etc/letsencrypt/archive/ || true
+            sudo chmod -R 755 /etc/letsencrypt/live/ || true
+
+            # Права на базу и папку проекта
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
             sudo chmod 777 .
             mkdir -p media && sudo chmod -R 777 media
 
-            # 2. ЗАПУСК (Сначала база и бэкенд, чтобы прогнать миграции)
-            docker compose up -d redis backend
+            # 2. ЗАПУСК
+            # Принудительно пересоздаем контейнеры, чтобы подхватить новые конфиги и права
+            docker compose up -d --remove-orphans --force-recreate
 
-            # 3. МИГРАЦИИ (Включая создание пропущенных миграций для 'order')
+            # 3. МИГРАЦИИ (Включая создание пропущенных полей в 'order')
             docker compose exec -T backend python manage.py makemigrations order --noinput
             docker compose exec -T backend python manage.py migrate --noinput
             docker compose exec -T backend python manage.py collectstatic --noinput
 
-            # 4. ЗАПУСК ОСТАЛЬНОГО (Nginx подхватит статику и проксирование)
-            docker compose up -d --remove-orphans
-
-            # 5. РЕСТАРТ БЭКЕНДА (Чтобы сбросить кэш соединений после миграций)
+            # 4. ФИНАЛЬНЫЙ ПЕРЕЗАПУСК БЭКЕНДА
             docker compose restart backend
             docker system prune -f
 
@@ -64,7 +67,6 @@ jobs:
             cd /var/www/polkanoval-project
             echo "⏳ Ожидание готовности API (Database/Redis)..."
 
-            # Цикл ожидания, пока health_check не вернет "ok" по всем фронтам
             for i in {1..12}; do
               echo "📊 Проверка #$i..."
               RESPONSE=$(docker compose exec -T backend python -c "
@@ -75,18 +77,19 @@ jobs:
                 with urllib.request.urlopen(req) as r:
                     print(r.read().decode())
             except Exception as e:
-                print(f'waiting')
+                print('waiting')
             " || echo "error")
 
               echo "Response: $RESPONSE"
 
               if [[ "$RESPONSE" == *"database\": \"ok\""* ]] && [[ "$RESPONSE" == *"redis\": \"ok\""* ]]; then
-                echo "✅ ДЕПЛОЙ УСПЕШЕН: База и Редис доступны."
+                echo "✅ ДЕПЛОЙ УСПЕШЕН: Все системы онлайн."
                 exit 0
               fi
               sleep 5
             done
 
-            echo "❌ ОШИБКА: Сервис не вышел в онлайн за 60 секунд."
-            docker compose logs backend --tail 50
+            echo "❌ ОШИБКА: Тайм-аут готовности системы."
+            docker compose logs --tail 20 nginx
+            docker compose logs --tail 20 backend
             exit 1
