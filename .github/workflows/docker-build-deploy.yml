@@ -35,6 +35,7 @@ jobs:
 
             # 1. ЖЕСТКИЙ FIX ПРАВ (SSL + SQLite)
             # Открываем доступ к сертификатам для Nginx (симлинки Certbot)
+            # В 2026 без 755 на папку archive симлинки в live не работают
             sudo chmod -R 755 /etc/letsencrypt/
             sudo find /etc/letsencrypt/archive/ -type f -exec chmod 644 {} +
 
@@ -48,7 +49,7 @@ jobs:
             docker compose down
             docker compose up -d --remove-orphans
 
-            # 3. МИГРАЦИИ (Включая создание пропущенных полей в 'order')
+            # 3. МИГРАЦИИ (Лечим структуру 'order' и статику)
             docker compose exec -T backend python manage.py makemigrations order --noinput
             docker compose exec -T backend python manage.py migrate --noinput
             docker compose exec -T backend python manage.py collectstatic --noinput
@@ -91,6 +92,7 @@ jobs:
 
               echo "Backend: $RESPONSE"
 
+              # Успех только если и база, и редис ответили OK
               if [[ "$RESPONSE" == *"database\": \"ok\""* ]] && [[ "$RESPONSE" == *"redis\": \"ok\""* ]]; then
                 echo "✅ ДЕПЛОЙ УСПЕШЕН: Все системы онлайн."
                 exit 0
