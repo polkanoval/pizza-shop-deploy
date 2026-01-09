@@ -7,7 +7,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      # ШАГ 1: Загружаем файлы из репозитория деплоя (docker-compose, nginx.conf)
+      # ШАГ 1: Загружаем файлы из репозитория деплоя
       - name: Checkout repository code
         uses: actions/checkout@v4
 
@@ -20,15 +20,11 @@ jobs:
       # ШАГ 3: Подготовка сервера и копирование конфигов
       - name: Copy Configs via SCP
         run: |
-          # 1. Создаем структуру папок.
-          # Важно создать 'media' заранее, чтобы она не создалась от имени root при запуске Docker
           ssh -o StrictHostKeyChecking=no ${{ secrets.USER }}@${{ secrets.HOST }} "mkdir -p /var/www/polkanoval-project/nginx/conf/ /var/www/polkanoval-project/media/"
-
-          # 2. Копируем файлы управления
           scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/
           scp -o StrictHostKeyChecking=no nginx/conf/prod.conf ${{ secrets.USER }}@${{ secrets.HOST }}:/var/www/polkanoval-project/nginx/conf/
 
-      # ШАГ 4: Команды на сервере (Автоматизация БД, статики и ПРАВ ДОСТУПА)
+      # ШАГ 4: Команды на сервере
       - name: Run deploy scripts on server
         uses: appleboy/ssh-action@master
         with:
@@ -38,36 +34,55 @@ jobs:
           script: |
             cd /var/www/polkanoval-project
 
-            # 1. Авторизация в реестре образов
+            # 1. Авторизация
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # 2. Обновление образов и перезапуск
+            # 2. Обновление образов и запуск
             docker compose pull
             docker compose up -d --remove-orphans
-            # Перезапускаем Celery-сервисы, чтобы они подгрузили новый код задач
-            docker compose restart celery-worker celery-beat
 
-            docker compose restart nginx
-
-            # 3. НАСТРОЙКА ПРАВ (Критически важно для записи Медиа и БД)
-            # Даем права на запись в папку медиа и файл базы данных внутри контейнера
-            # chmod 666 для sqlite позволяет избежать ошибки 'readonly database'
+            # 3. НАСТРОЙКА ПРАВ
             sudo chmod -R 775 media/
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
-            # Применяем права к файлу БД внутри всех контейнеров, где он смонтирован
             docker compose exec -T backend sh -c 'chmod 666 /app/db.sqlite3 || true'
             docker compose exec -T celery-worker sh -c 'chmod 666 /app/db.sqlite3 || true'
             docker compose exec -T celery-beat sh -c 'chmod 666 /app/db.sqlite3 || true'
 
             # 4. АВТОМАТИЗАЦИЯ DJANGO
-            # Применяем миграции
             docker compose exec -T backend python manage.py migrate --noinput
-            # Собираем статику в static_volume
             docker compose exec -T backend python manage.py collectstatic --noinput
 
             # 5. ОЧИСТКА
             docker system prune -af --volumes
 
-            # Как смотреть логи симуляции заказов (Celery worker):
-            # docker compose logs -f celery-worker
+      # ШАГ 5: ПРОВЕРКА СОСТОЯНИЯ (HEALTH CHECK) ДЛЯ КЛИЕНТА
+      - name: Verify Deployment Health
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/polkanoval-project
+            echo "⏳ Ожидание готовности сервисов..."
+            sleep 20
+
+            echo "📊 СТАТУС КОНТЕЙНЕРОВ:"
+            docker ps --format "table {{.Names}}\t{{.Status}}"
+
+            echo ""
+            echo "⚙️ ПРОВЕРКА ВНУТРЕННИХ СИСТЕМ (API):"
+            # Запрашиваем созданный нами ранее эндпоинт
+            HEALTH_RESPONSE=$(docker compose exec -T backend curl -s http://localhost:8000/api/health/)
+            echo "$HEALTH_RESPONSE"
+
+            # Проверяем наличие ключевого слова 'ok' в ответе
+            if echo "$HEALTH_RESPONSE" | grep -q "ok"; then
+              echo ""
+              echo "✅ ДЕПЛОЙ УСПЕШЕН: Все системы работают исправно."
+            else
+              echo ""
+              echo "❌ ВНИМАНИЕ: Обнаружены проблемы после деплоя!"
+              exit 1
+            fi

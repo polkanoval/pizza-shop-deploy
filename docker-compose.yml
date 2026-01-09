@@ -4,6 +4,11 @@ services:
     image: redis:7-alpine
     container_name: pizza-redis
     restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     logging: &default-logging
       driver: "json-file"
       options:
@@ -16,15 +21,21 @@ services:
     restart: always
     expose:
       - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s # Даем время на запуск Django
     volumes:
       - ./db.sqlite3:/app/db.sqlite3
       - static_volume:/app/staticfiles
       - ./media:/app/media
-      # Синхронизация времени
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy # Backend ждет, пока Redis станет healthy
     deploy:
       resources:
         limits:
@@ -35,18 +46,23 @@ services:
   celery-worker:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
     container_name: pizza-celery-worker
-    # Фикс заторов: concurrency, честное распределение и мониторинг событий
     command: celery -A backend worker --loglevel=info --concurrency=4 -Ofair --prefetch-multiplier=1 -E
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A backend inspect ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     volumes:
       - ./db.sqlite3:/app/db.sqlite3
       - ./media:/app/media
-      # Синхронизация времени (Критично для выполнения countdown)
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     depends_on:
-      - redis
-      - backend
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -64,7 +80,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -98,8 +115,10 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
     deploy:
       resources:
         limits:
