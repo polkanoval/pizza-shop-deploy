@@ -30,34 +30,40 @@ jobs:
           script: |
             cd /var/www/polkanoval-project
 
-            # 1. Авторизация
+            # 1. Авторизация в GHCR
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # 2. Обновление образов
             docker compose pull
 
-            # 3. ЗАПУСК ЯДРА (Без блокировки терминала)
-            # Запускаем только redis и backend. Остальные (celery, nginx) будут ждать их готовности.
-            docker compose up -d redis backend
-
-            # 4. ПОДГОТОВКА ПРАВ И БД (Важно сделать ДО миграций)
-            sudo chmod -R 775 media/
+            # 3. ПОДГОТОВКА ПРАВ И ФАЙЛОВ БД (ДО запуска)
+            # Создаем БД, если её нет, и даем права. Также создаем папку media.
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
+            mkdir -p media
+            sudo chmod -R 777 media
 
-            # Даем Django пару секунд на старт процесса
-            sleep 5
+            # 4. ЗАПУСК ЯДРА
+            # --no-deps позволяет запустить только эти два контейнера
+            docker compose up -d redis backend --no-deps
 
-            # 5. АВТОМАТИЗАЦИЯ DJANGO (Разобьет Deadlock)
-            # Эти команды оживят backend, чтобы он прошел healthcheck
+            # Даем Django время на запуск внутреннего процесса
+            sleep 10
+
+            # 5. АВТОМАТИЗАЦИЯ DJANGO (Решаем проблему Deadlock и отсутствующих миграций)
+            # Создаем миграции, если вы забыли сделать это локально
+            docker compose exec -T backend python manage.py makemigrations --noinput
+            # Применяем миграции
             docker compose exec -T backend python manage.py migrate --noinput
+            # Собираем статику
             docker compose exec -T backend python manage.py collectstatic --noinput
 
             # 6. ЗАПУСК ОСТАЛЬНЫХ СЕРВИСОВ
-            # Теперь, когда миграции прошли, backend станет Healthy, и Docker запустит воркеры и nginx
+            # Теперь, когда база готова и миграции прошли, backend станет Healthy.
+            # Эта команда дозапустит celery-worker, celery-beat, frontend и nginx.
             docker compose up -d --remove-orphans
 
-            # 7. ОЧИСТКА
+            # 7. ОЧИСТКА СТАРЫХ ДАННЫХ
             docker system prune -af --volumes
 
       - name: Verify Deployment Health
