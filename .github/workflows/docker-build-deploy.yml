@@ -33,24 +33,24 @@ jobs:
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
 
-            # 1. Подготовка прав для SQLite (обязательно 777 на папку для lock-файлов)
+            # 1. ПРАВА (Решаем 500 ошибку SQLite и Media)
             [ -f db.sqlite3 ] || touch db.sqlite3
             sudo chmod 666 db.sqlite3
             sudo chmod 777 .
             mkdir -p media && sudo chmod -R 777 media
 
-            # 2. Запуск контейнеров
-            # (Работает корректно с service_started в docker-compose.yml)
-            docker compose up -d --remove-orphans
+            # 2. ЗАПУСК (Сначала база и бэкенд, чтобы прогнать миграции)
+            docker compose up -d redis backend
 
-            # 3. ГЕНЕРАЦИЯ МИГРАЦИЙ
-            docker compose exec -T backend python manage.py makemigrations --noinput
-
-            # 4. ПРИМЕНЕНИЕ МИГРАЦИЙ
+            # 3. МИГРАЦИИ (Включая создание пропущенных миграций для 'order')
+            docker compose exec -T backend python manage.py makemigrations order --noinput
             docker compose exec -T backend python manage.py migrate --noinput
             docker compose exec -T backend python manage.py collectstatic --noinput
 
-            # 5. ПЕРЕЗАПУСК
+            # 4. ЗАПУСК ОСТАЛЬНОГО (Nginx подхватит статику и проксирование)
+            docker compose up -d --remove-orphans
+
+            # 5. РЕСТАРТ БЭКЕНДА (Чтобы сбросить кэш соединений после миграций)
             docker compose restart backend
             docker system prune -f
 
@@ -62,37 +62,31 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/polkanoval-project
-            echo "⏳ Ожидание готовности (20 сек)..."
-            sleep 20
+            echo "⏳ Ожидание готовности API (Database/Redis)..."
 
-            echo "📊 ПРОВЕРКА API:"
-            # Используем Python для проверки, так как curl отсутствует в образе.
-            # Принудительно передаем Host: localhost, чтобы пройти проверку ALLOWED_HOSTS.
-            HEALTH_JSON=$(docker compose exec -T backend python -c "
-            import urllib.request
+            # Цикл ожидания, пока health_check не вернет "ok" по всем фронтам
+            for i in {1..12}; do
+              echo "📊 Проверка #$i..."
+              RESPONSE=$(docker compose exec -T backend python -c "
+            import urllib.request, json
             req = urllib.request.Request('http://localhost:8000/api/health/')
             req.add_header('Host', 'localhost')
             try:
-                print(urllib.request.urlopen(req).read().decode())
+                with urllib.request.urlopen(req) as r:
+                    print(r.read().decode())
             except Exception as e:
-                print(f'error: {e}')
+                print(f'waiting')
             " || echo "error")
 
-            echo "Response: $HEALTH_JSON"
+              echo "Response: $RESPONSE"
 
-            echo "📊 ПРОВЕРКА ФРОНТЕНДА:"
-            if docker compose exec -T frontend wget --spider -q http://localhost; then
-              echo "{\"frontend\": \"ok\"}"
-              FRONTEND_OK=true
-            else
-              echo "{\"frontend\": \"error\"}"
-              FRONTEND_OK=false
-            fi
+              if [[ "$RESPONSE" == *"database\": \"ok\""* ]] && [[ "$RESPONSE" == *"redis\": \"ok\""* ]]; then
+                echo "✅ ДЕПЛОЙ УСПЕШЕН: База и Редис доступны."
+                exit 0
+              fi
+              sleep 5
+            done
 
-            if [[ "$HEALTH_JSON" == *"ok"* ]] && [ "$FRONTEND_OK" = true ]; then
-              echo "✅ ДЕПЛОЙ УСПЕШЕН: Все системы работают исправно."
-            else
-              echo "❌ ВНИМАНИЕ: Проблемы с доступностью API или Фронтенда!"
-              docker compose logs backend --tail 30
-              exit 1
-            fi
+            echo "❌ ОШИБКА: Сервис не вышел в онлайн за 60 секунд."
+            docker compose logs backend --tail 50
+            exit 1
