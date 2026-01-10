@@ -34,6 +34,9 @@ services:
     container_name: pizza-celery-worker
     command: celery -A backend worker --loglevel=info
     restart: always
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./media:/app/media
     depends_on:
       redis:
         condition: service_healthy
@@ -45,6 +48,8 @@ services:
     container_name: pizza-celery-beat
     command: celery -A backend beat --loglevel=info
     restart: always
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
     depends_on:
       redis:
         condition: service_healthy
