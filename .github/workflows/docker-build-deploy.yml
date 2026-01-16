@@ -33,6 +33,10 @@ jobs:
           script: |
             cd /var/www/polkanoval-project
 
+            touch .env
+            sed -i '/BETTERSTACK_API_TOKEN/d' .env
+            echo "BETTERSTACK_API_TOKEN=${BETTERSTACK_API_TOKEN}" >> .env
+
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
 
