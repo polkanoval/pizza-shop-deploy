@@ -74,6 +74,9 @@ jobs:
           envs: BETTERSTACK_API_TOKEN
           script: |
             cd /var/www/polkanoval-project
+            echo "⏳ Ждем 15 секунд для прогрева Django и BetterStack..."
+            sleep 15
+
             echo "⏳ Начинаем проверку готовности систем..."
 
             # Вспомогательная функция для проверки эндпоинтов по новым путям
