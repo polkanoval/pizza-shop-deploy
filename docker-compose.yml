@@ -8,6 +8,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
@@ -31,6 +36,11 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   celery-worker:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
@@ -47,6 +57,11 @@ services:
         condition: service_started
     environment:
       - BETTERSTACK_API_TOKEN=${BETTERSTACK_API_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   celery-beat:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
@@ -69,6 +84,11 @@ services:
     restart: always
     expose:
       - "80"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   nginx:
     image: nginx:stable-alpine
@@ -87,6 +107,11 @@ services:
         condition: service_started
       frontend:
         condition: service_started
+      logging:
+        driver: "json-file"
+        options:
+          max-size: "10m"
+          max-file: "3"
 
 volumes:
   static_volume:
