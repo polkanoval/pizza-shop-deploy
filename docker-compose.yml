@@ -15,6 +15,7 @@ services:
     restart: always
     expose:
       - "8000"
+    command: python manage.py runserver 0.0.0.0:8000 --noreload
     environment:
       - BETTERSTACK_API_TOKEN=${BETTERSTACK_API_TOKEN}
     healthcheck:
