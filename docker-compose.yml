@@ -19,7 +19,7 @@ services:
     environment:
       - BETTERSTACK_API_TOKEN=${BETTERSTACK_API_TOKEN}
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 8000 || exit 1"]
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.connect(('127.0.0.1', 8000))"]
       interval: 30s
       timeout: 10s
       retries: 3
