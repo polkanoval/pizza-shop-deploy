@@ -23,13 +23,15 @@ jobs:
 
       - name: Run deploy scripts on server
         uses: appleboy/ssh-action@master
+        env:
+          BETTERSTACK_API_TOKEN: ${{ secrets.BETTERSTACK_API_TOKEN }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: BETTERSTACK_API_TOKEN
           script: |
             cd /var/www/polkanoval-project
-            export BETTERSTACK_API_TOKEN=${{ secrets.BETTERSTACK_API_TOKEN }}
 
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
@@ -59,10 +61,13 @@ jobs:
 
       - name: Verify Deployment Health
         uses: appleboy/ssh-action@master
+        env:
+          BETTERSTACK_API_TOKEN: ${{ secrets.BETTERSTACK_API_TOKEN }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: BETTERSTACK_API_TOKEN
           script: |
             cd /var/www/polkanoval-project
             echo "⏳ Начинаем проверку готовности систем..."
