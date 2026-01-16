@@ -107,11 +107,11 @@ services:
         condition: service_started
       frontend:
         condition: service_started
-      logging:
-        driver: "json-file"
-        options:
-          max-size: "10m"
-          max-file: "3"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   static_volume:
