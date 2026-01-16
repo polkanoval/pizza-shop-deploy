@@ -15,6 +15,8 @@ services:
     restart: always
     expose:
       - "8000"
+    environment:
+      - BETTERSTACK_API_TOKEN=${BETTERSTACK_API_TOKEN}
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 8000 || exit 1"]
       interval: 30s
