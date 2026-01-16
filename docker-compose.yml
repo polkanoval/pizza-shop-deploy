@@ -44,6 +44,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_started
+    environment:
+      - BETTERSTACK_API_TOKEN=${BETTERSTACK_API_TOKEN}
 
   celery-beat:
     image: ghcr.io/polkanoval/pizza-shop-backend:latest
@@ -57,6 +59,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_started
+    environment:
+      - BETTERSTACK_API_TOKEN=${BETTERSTACK_API_TOKEN}
 
   frontend:
     image: ghcr.io/polkanoval/pizza-shop-frontend:latest
