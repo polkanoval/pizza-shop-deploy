@@ -127,3 +127,5 @@ jobs:
             echo "❌ ОШИБКА: Тайм-аут готовности системы (60 сек)."
             docker compose ps
             exit 1
+
+            docker restart main-gateway
